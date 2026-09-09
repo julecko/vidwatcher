@@ -118,6 +118,22 @@ sudo systemctl restart vidwatcher
 
 or use `output.mode = "directory"` pointing somewhere the service user owns.
 
+## Resource use
+
+The service runs with `CPUSchedulingPolicy=idle` and `IOSchedulingClass=idle`
+(plus the lowest cgroup weights). In practice that means: it soaks up whatever
+CPU/disk is spare when the machine is otherwise idle, and backs off almost
+completely as soon as anything normal-priority wants those resources. There is no
+hard cap by default. To add a ceiling anyway:
+
+```sh
+sudo systemctl edit vidwatcher
+# [Service]
+# CPUQuota=400%      # never more than 4 cores
+# AllowedCPUs=2-7    # or pin it off your interactive cores
+sudo systemctl restart vidwatcher
+```
+
 ## Notes
 
 - Outputs are written as `name.webm` (or `name.av1.webm` when the source is

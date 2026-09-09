@@ -20,10 +20,24 @@ Group=vidwatcher
 StateDirectory=vidwatcher
 StateDirectoryMode=0750
 
-# Be a good neighbour: encoding is CPU/IO heavy.
-Nice=15
-CPUWeight=20
+# Encoding is CPU/IO heavy, so run it at the very bottom of the priority order:
+# use as much spare capacity as is going when the box is idle, but yield almost
+# entirely the moment anything else wants the CPU or disk.
+#
+# SCHED_IDLE: only scheduled when no normal-priority task is runnable.
+CPUSchedulingPolicy=idle
+# Lowest cgroup weight, so even under cgroup contention it gets the crumbs.
+CPUWeight=1
+StartupCPUWeight=1
+# Same idea for disk I/O.
 IOSchedulingClass=idle
+IOWeight=1
+
+# No hard cap: it is free to use every idle core. If you would rather also put a
+# ceiling on it, add one in a drop-in (`systemctl edit vidwatcher`):
+#   [Service]
+#   CPUQuota=400%          # never more than 4 cores, even when idle
+#   AllowedCPUs=2-7        # or: keep it off cores 0-1 entirely
 
 # Hardening. `ProtectHome` and `ProtectSystem` are deliberately loose because
 # watched/output directories can be anywhere; tighten them in a drop-in if your
