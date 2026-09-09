@@ -5,6 +5,7 @@
 # Directories to watch. The daemon rescans these on every pass.
 # Nothing happens until you list at least one.
 watch = [
+    "/home/julecko/Projects/vidwatcher/examples"
     # "/srv/media/incoming",
     # "/home/me/Videos",
 ]

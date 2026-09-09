@@ -92,6 +92,31 @@ vidwatcher [--config FILE] [--once] [--check-config] [--log-level LEVEL]
 --check-config    print the resolved configuration and exit
 ```
 
+## Troubleshooting
+
+**`loading state /var/lib/vidwatcher/state.json: Permission denied`** — you ran
+`vidwatcher` as root at some point (e.g. `sudo vidwatcher --once`) and the state
+file is now owned by root, unreadable by the `vidwatcher` service user:
+
+```sh
+sudo systemctl stop vidwatcher
+sudo rm -f /var/lib/vidwatcher/state.json /var/lib/vidwatcher/state.json.tmp
+sudo chown -R vidwatcher:vidwatcher /var/lib/vidwatcher
+sudo systemctl start vidwatcher
+```
+
+**Watched/output directories under `/home`** — the unprivileged `vidwatcher`
+user usually cannot traverse `/home/<you>` or write next to your files. Either
+run the service as yourself:
+
+```sh
+sudo systemctl edit vidwatcher      # [Service] \n User=you \n Group=you
+sudo rm -f /var/lib/vidwatcher/state.json    # was owned by the old user
+sudo systemctl restart vidwatcher
+```
+
+or use `output.mode = "directory"` pointing somewhere the service user owns.
+
 ## Notes
 
 - Outputs are written as `name.webm` (or `name.av1.webm` when the source is

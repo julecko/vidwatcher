@@ -146,6 +146,14 @@ impl State {
         let tmp = self.path.with_extension("json.tmp");
         std::fs::write(&tmp, serde_json::to_vec_pretty(self)?)
             .with_context(|| format!("writing {}", tmp.display()))?;
+        // Force world-readable perms so a restrictive root umask (e.g. 077) during
+        // a manual `--once` run can't leave a state file the service user can't read.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o644))
+                .with_context(|| format!("chmod {}", tmp.display()))?;
+        }
         std::fs::rename(&tmp, &self.path)
             .with_context(|| format!("replacing {}", self.path.display()))?;
         self.dirty = false;

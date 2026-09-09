@@ -33,9 +33,20 @@ pub fn run_once(
         if shutdown.load(Ordering::Relaxed) {
             break;
         }
-        if !root.is_dir() {
-            log::warn!("watch path is not a directory, skipping: {}", root.display());
-            continue;
+        match std::fs::metadata(root) {
+            Ok(m) if m.is_dir() => {}
+            Ok(_) => {
+                log::warn!("watch path is not a directory, skipping: {}", root.display());
+                continue;
+            }
+            Err(e) => {
+                log::warn!(
+                    "cannot access watch path {} ({e}); if running as a service user, \
+                     it may lack permission to traverse this path",
+                    root.display()
+                );
+                continue;
+            }
         }
 
         let files = scan::candidates(root, cfg.recursive);

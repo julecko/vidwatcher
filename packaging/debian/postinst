@@ -16,7 +16,8 @@ case "$1" in
         fi
 
         mkdir -p "$STATE"
-        chown "$USER:$GROUP" "$STATE"
+        # -R so a stale root-owned state.json from a manual run gets fixed up.
+        chown -R "$USER:$GROUP" "$STATE"
         chmod 0750 "$STATE"
 
         if [ -d /run/systemd/system ]; then
