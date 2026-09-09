@@ -13,6 +13,8 @@ pub struct ScanStats {
     pub converted: u64,
     pub skipped: u64,
     pub failed: u64,
+    /// Re-encoded but the result was not smaller, so the original was kept.
+    pub kept: u64,
 }
 
 /// Run a single pass over all watched directories.
@@ -27,6 +29,7 @@ pub fn run_once(
         converted: 0,
         skipped: 0,
         failed: 0,
+        kept: 0,
     };
 
     for root in &cfg.watch {
@@ -60,6 +63,7 @@ pub fn run_once(
                 FileResult::Converted => stats.converted += 1,
                 FileResult::Skipped => stats.skipped += 1,
                 FileResult::Failed => stats.failed += 1,
+                FileResult::KeptOriginal => stats.kept += 1,
                 FileResult::Interrupted => return stats,
             }
             if let Err(e) = state.save_if_dirty() {
@@ -82,6 +86,7 @@ enum FileResult {
     Converted,
     Skipped,
     Failed,
+    KeptOriginal,
     Interrupted,
 }
 
@@ -162,6 +167,24 @@ fn handle_file(
     let started = SystemTime::now();
     match ffmpeg::encode(input, &output, opts, shutdown) {
         Ok(EncodeResult::Ok) => {
+            let in_bytes = std::fs::metadata(input).map(|m| m.len()).unwrap_or(0);
+            let out_bytes = std::fs::metadata(&output).map(|m| m.len()).unwrap_or(0);
+
+            // A low-bitrate source can re-encode *larger* for no quality gain.
+            // In that case bin the result and keep the original.
+            if in_bytes > 0 && out_bytes as f64 > in_bytes as f64 * cfg.output.max_output_ratio {
+                log::info!(
+                    "re-encode not worth it ({} -> {}, {:.0}% of original), keeping original: {}",
+                    human(in_bytes),
+                    human(out_bytes),
+                    100.0 * out_bytes as f64 / in_bytes as f64,
+                    input.display(),
+                );
+                let _ = std::fs::remove_file(&output);
+                state.record_done(input, id, input);
+                return FileResult::KeptOriginal;
+            }
+
             log::info!(
                 "done in {}: {}{}",
                 fmt_duration(started.elapsed().unwrap_or_default()),

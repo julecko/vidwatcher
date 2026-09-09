@@ -78,6 +78,7 @@ default. Key settings:
 | `output.replace` | delete source after success | `false` |
 | `output.skip-av1` | skip files already in AV1 | `true` |
 | `output.preserve-timestamps` | copy source mtime/atime onto the output | `true` |
+| `output.max-output-ratio` | discard the re-encode & keep the original if it's not smaller than `size * ratio` | `1.0` |
 | `log.level` | `error`…`trace` | `info` |
 | `log.file` | also append logs here | — |
 
@@ -127,6 +128,11 @@ or use `output.mode = "directory"` pointing somewhere the service user owns.
   with `libaom-av1`.
 - 10-bit AV1 is actually *smaller* than 8-bit at equal quality; use `bit-depth =
   8` only if a target device can't hardware-decode 10-bit.
+- Re-encoding a file that is already small or low-bitrate can produce a *larger*
+  AV1 file with no quality benefit. `max-output-ratio` guards against this: if the
+  result isn't small enough the output is deleted, the original is left in place,
+  and the file is marked done so it isn't retried. Such files show as `kept` in
+  the pass summary.
 - With `preserve-timestamps` the output keeps the source's *modified* and
   *accessed* times. A file's *creation* (birth) time cannot be set on Linux — no
   syscall exists — so on the new file it will be the conversion time. The inode

@@ -109,8 +109,9 @@ fn run() -> Result<()> {
     if args.once {
         let stats = worker::run_once(&cfg, encoder, &mut state, &shutdown);
         log::info!(
-            "pass complete: {} converted, {} skipped, {} failed",
+            "pass complete: {} converted, {} kept (not smaller), {} skipped, {} failed",
             stats.converted,
+            stats.kept,
             stats.skipped,
             stats.failed
         );
@@ -124,11 +125,12 @@ fn run() -> Result<()> {
     while !shutdown.load(Ordering::SeqCst) {
         let started = Instant::now();
         let stats = worker::run_once(&cfg, encoder, &mut state, &shutdown);
-        if stats.converted + stats.failed > 0 {
+        if stats.converted + stats.failed + stats.kept > 0 {
             log::info!(
-                "pass complete in {:?}: {} converted, {} skipped, {} failed",
+                "pass complete in {:?}: {} converted, {} kept (not smaller), {} skipped, {} failed",
                 started.elapsed(),
                 stats.converted,
+                stats.kept,
                 stats.skipped,
                 stats.failed
             );

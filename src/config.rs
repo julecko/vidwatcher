@@ -94,6 +94,11 @@ pub struct OutputConfig {
     /// (Linux has no way to set a file's *birth* time, so that will be "now".)
     #[serde(default = "yes")]
     pub preserve_timestamps: bool,
+    /// Throw away the re-encode and keep the original if the new file would be
+    /// bigger than `original_size * max_output_ratio`. `1.0` = only reject a
+    /// genuine enlargement; `0.9` = require at least a 10% saving to bother.
+    #[serde(default = "default_max_output_ratio")]
+    pub max_output_ratio: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
@@ -165,6 +170,10 @@ impl Config {
         if self.scan_interval.is_zero() {
             anyhow::bail!("scan-interval must be greater than zero");
         }
+        let ratio = self.output.max_output_ratio;
+        if ratio.is_nan() || ratio <= 0.0 {
+            anyhow::bail!("output.max-output-ratio must be greater than zero");
+        }
         Ok(())
     }
 }
@@ -196,6 +205,9 @@ fn default_audio_bitrate() -> u32 {
 fn default_bit_depth() -> u8 {
     10
 }
+fn default_max_output_ratio() -> f64 {
+    1.0
+}
 fn default_log_level() -> String {
     "info".to_string()
 }
@@ -220,6 +232,7 @@ impl Default for OutputConfig {
             replace: false,
             skip_av1: true,
             preserve_timestamps: true,
+            max_output_ratio: default_max_output_ratio(),
         }
     }
 }

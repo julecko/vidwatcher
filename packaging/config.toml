@@ -56,6 +56,13 @@ skip-av1 = true
 # (Linux cannot set a file's creation/birth time, so that stays as "now".)
 preserve-timestamps = true
 
+# Re-encoding an already-small / low-bitrate file can make it *larger* for no
+# quality gain. If the new file exceeds  original_size * max-output-ratio  it is
+# discarded and the original is kept (and not retried).
+#   1.0  = only reject a genuine size increase
+#   0.9  = only keep the re-encode if it saves at least 10%
+max-output-ratio = 1.0
+
 [log]
 # error | warn | info | debug | trace
 level = "info"
