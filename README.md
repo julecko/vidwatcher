@@ -12,7 +12,7 @@ A per-file state database stops the daemon from converting the same file twice.
 ## Install (Debian / Ubuntu)
 
 ```sh
-sudo apt install ./vidwatcher_0.1.0_amd64.deb
+sudo apt install ./vidwatcher_1.0.0_amd64.deb
 ```
 
 This installs the `vidwatcher` binary, a `vidwatcher.service` unit (enabled but
