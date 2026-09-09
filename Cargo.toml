@@ -1,6 +1,6 @@
 [package]
 name = "vidwatcher"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 description = "Daemon that batch-converts videos to AV1 video + Opus audio (WebM)"
 license = "MIT"
