@@ -1,0 +1,40 @@
+[Unit]
+Description=vidwatcher - batch AV1/Opus video converter
+Documentation=file:/usr/share/doc/vidwatcher/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/vidwatcher --config /etc/vidwatcher/config.toml
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+
+# Run unprivileged. Override with `systemctl edit vidwatcher` if you would
+# rather it run as your own user (e.g. for media under /home).
+User=vidwatcher
+Group=vidwatcher
+
+# /var/lib/vidwatcher, created and chowned by systemd.
+StateDirectory=vidwatcher
+StateDirectoryMode=0750
+
+# Be a good neighbour: encoding is CPU/IO heavy.
+Nice=15
+CPUWeight=20
+IOSchedulingClass=idle
+
+# Hardening. `ProtectHome` and `ProtectSystem` are deliberately loose because
+# watched/output directories can be anywhere; tighten them in a drop-in if your
+# media lives in a known location.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=false
+ProtectControlGroups=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

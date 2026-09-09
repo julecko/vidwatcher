@@ -2,8 +2,12 @@
 
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
+
+use crate::config::EncodeConfig;
 
 /// AV1 encoders we know how to drive, in order of preference.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,7 +37,6 @@ impl Av1Encoder {
             text.lines()
                 .any(|line| line.split_whitespace().nth(1) == Some(name))
         };
-
         for enc in [Av1Encoder::SvtAv1, Av1Encoder::Aom, Av1Encoder::Rav1e] {
             if has(enc.ffmpeg_name()) {
                 return Ok(enc);
@@ -45,17 +48,24 @@ impl Av1Encoder {
 
 pub struct EncodeOptions {
     pub encoder: Av1Encoder,
-    /// Constant-quality value, 0-63 (lower = better quality, bigger file).
     pub crf: u8,
-    /// Encoder-specific speed knob (SVT `-preset` / libaom `-cpu-used` / rav1e `-speed`).
     pub preset: i32,
-    /// Opus bitrate per audio stream, in kbit/s.
     pub audio_bitrate_kbps: u32,
-    /// 8 or 10.
     pub bit_depth: u8,
 }
 
-/// Bail out early with a friendly message if the tools are missing.
+impl EncodeOptions {
+    pub fn new(encoder: Av1Encoder, cfg: &EncodeConfig) -> Self {
+        Self {
+            encoder,
+            crf: cfg.crf,
+            preset: cfg.preset,
+            audio_bitrate_kbps: cfg.audio_bitrate,
+            bit_depth: cfg.bit_depth,
+        }
+    }
+}
+
 pub fn check_tools() -> Result<()> {
     for tool in ["ffmpeg", "ffprobe"] {
         Command::new(tool)
@@ -73,14 +83,10 @@ pub fn check_tools() -> Result<()> {
 pub fn video_codec(input: &Path) -> Result<Option<String>> {
     let out = Command::new("ffprobe")
         .args([
-            "-v",
-            "error",
-            "-select_streams",
-            "v",
-            "-show_entries",
-            "stream=codec_name",
-            "-of",
-            "csv=p=0",
+            "-v", "error",
+            "-select_streams", "v",
+            "-show_entries", "stream=codec_name",
+            "-of", "csv=p=0",
         ])
         .arg(input)
         .output()
@@ -100,11 +106,26 @@ pub fn video_codec(input: &Path) -> Result<Option<String>> {
     Ok(None)
 }
 
+/// Outcome of an [`encode`] call.
+pub enum EncodeResult {
+    Ok,
+    /// The shutdown flag was set; the ffmpeg child was killed and the partial
+    /// output removed. Not an error and not recorded as a failure.
+    Interrupted,
+}
+
 /// Re-encode `input` to AV1 + Opus in a WebM container at `output`.
-pub fn encode(input: &Path, output: &Path, opts: &EncodeOptions) -> Result<()> {
+///
+/// Polls `shutdown`; if it flips to `true` the ffmpeg process is killed.
+pub fn encode(
+    input: &Path,
+    output: &Path,
+    opts: &EncodeOptions,
+    shutdown: &AtomicBool,
+) -> Result<EncodeResult> {
     let mut cmd = Command::new("ffmpeg");
     cmd.arg("-hide_banner")
-        .args(["-loglevel", "warning", "-stats"])
+        .args(["-loglevel", "warning", "-nostats"])
         .arg("-y")
         .arg("-i")
         .arg(input);
@@ -125,54 +146,52 @@ pub fn encode(input: &Path, output: &Path, opts: &EncodeOptions) -> Result<()> {
     match opts.encoder {
         Av1Encoder::SvtAv1 => {
             cmd.args([
-                "-c:v",
-                "libsvtav1",
-                "-crf",
-                &crf,
-                "-preset",
-                &preset,
-                "-svtav1-params",
-                "tune=0",
+                "-c:v", "libsvtav1",
+                "-crf", &crf,
+                "-preset", &preset,
+                "-svtav1-params", "tune=0",
             ]);
         }
         Av1Encoder::Aom => {
             cmd.args([
-                "-c:v",
-                "libaom-av1",
-                "-crf",
-                &crf,
-                "-b:v",
-                "0", // true constant-quality mode
-                "-cpu-used",
-                &preset,
-                "-row-mt",
-                "1",
-                "-tiles",
-                "2x2",
+                "-c:v", "libaom-av1",
+                "-crf", &crf,
+                "-b:v", "0", // true constant-quality mode
+                "-cpu-used", &preset,
+                "-row-mt", "1",
+                "-tiles", "2x2",
             ]);
         }
         Av1Encoder::Rav1e => {
-            // rav1e quantizer is 0-255; crf is 0-63.
             let qp = (i32::from(opts.crf) * 4).clamp(0, 255).to_string();
             cmd.args([
-                "-c:v",
-                "librav1e",
-                "-qp",
-                &qp,
-                "-rav1e-params",
-                &format!("speed={preset}"),
+                "-c:v", "librav1e",
+                "-qp", &qp,
+                "-rav1e-params", &format!("speed={preset}"),
             ]);
         }
     }
 
     let audio_bitrate = format!("{}k", opts.audio_bitrate_kbps);
     cmd.args(["-c:a", "libopus", "-b:a", &audio_bitrate]);
+    cmd.arg(output);
+    cmd.stdin(Stdio::null());
 
-    cmd.arg(output).stdin(Stdio::null());
-
-    let status = cmd.status().context("failed to spawn ffmpeg")?;
-    if !status.success() {
-        return Err(anyhow!("ffmpeg exited with {status}"));
+    let mut child = cmd.spawn().context("failed to spawn ffmpeg")?;
+    loop {
+        if shutdown.load(Ordering::Relaxed) {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = std::fs::remove_file(output);
+            return Ok(EncodeResult::Interrupted);
+        }
+        match child.try_wait().context("waiting on ffmpeg")? {
+            Some(status) if status.success() => return Ok(EncodeResult::Ok),
+            Some(status) => {
+                let _ = std::fs::remove_file(output);
+                bail!("ffmpeg exited with {status}");
+            }
+            None => std::thread::sleep(Duration::from_millis(200)),
+        }
     }
-    Ok(())
 }

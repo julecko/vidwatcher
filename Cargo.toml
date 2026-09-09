@@ -2,8 +2,24 @@
 name = "vidwatcher"
 version = "0.1.0"
 edition = "2024"
+description = "Daemon that batch-converts videos to AV1 video + Opus audio (WebM)"
+license = "MIT"
 
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+ctrlc = { version = "3", features = ["termination"] }
+dirs = "5"
+humantime = "2"
+humantime-serde = "1"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+simplelog = "0.12"
+toml = "0.8"
 walkdir = "2"
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1

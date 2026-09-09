@@ -1,0 +1,16 @@
+Package: vidwatcher
+Version: 0.0.0
+Architecture: all
+Maintainer: julecko <julkoklein@gmail.com>
+Section: video
+Priority: optional
+Depends: ffmpeg, adduser, systemd
+Description: Daemon that batch-converts videos to AV1 + Opus (WebM)
+ vidwatcher watches a set of configured directories and periodically
+ re-encodes new video files to AV1 video and Opus audio in a WebM
+ container - a compact, royalty-free combination that plays natively on
+ modern Android devices.
+ .
+ Conversion parameters, the scan interval and the watched directories are
+ all set in /etc/vidwatcher/config.toml. A per-file state database keeps
+ the daemon from re-converting the same video twice.

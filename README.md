@@ -1,43 +1,108 @@
 # vidwatcher
 
-Recursively re-encodes every video in a directory to **AV1 video + Opus audio**,
-muxed into **WebM** — a compact, royalty-free combination that plays natively on
-modern Android (AV1 decode on Android 10+, Opus on Android 5+/7+).
+A small daemon that watches directories and re-encodes new videos to
+**AV1 video + Opus audio** in a **WebM** container — a compact, royalty-free
+combination that plays natively on modern Android (AV1 decode on Android 10+,
+Opus on Android 7+).
 
-Subtitles, data streams and attachments are dropped. Every audio track is kept and
-re-encoded to Opus. Stream metadata (including phone-video rotation) is preserved.
+Subtitles, data streams and attachments are dropped. Every audio track is kept
+and re-encoded to Opus. Stream metadata (including phone-video rotation) is kept.
+A per-file state database stops the daemon from converting the same file twice.
 
-## Requirements
+## Install (Debian / Ubuntu)
 
-`ffmpeg` and `ffprobe` on `PATH`, built with an AV1 encoder. The tool auto-selects
-the best available: `libsvtav1` → `libaom-av1` → `librav1e`.
-
-## Usage
-
-```
-vidwatcher <DIR> [OPTIONS]
-
---crf <0-63>          quality, lower = better/bigger        [default: 32]
---preset <N>          encoder speed knob (higher = faster)  [default: 6]
---audio-bitrate <k>   Opus kbit/s per track                 [default: 128]
---bit-depth <8|10>    10 = smaller; 8 = max HW compat        [default: 10]
---output-dir <DIR>    mirror the tree here instead of writing beside sources
---suffix <TEXT>       inserted before ".webm" in output names
---skip-av1            leave files that are already AV1 alone
---overwrite           re-encode even if the output exists
---replace             delete each source after it converts
---dry-run             print planned actions only
+```sh
+sudo apt install ./vidwatcher_0.1.0_amd64.deb
 ```
 
-Example:
+This installs the `vidwatcher` binary, a `vidwatcher.service` unit (enabled but
+**not** started), and the default config at `/etc/vidwatcher/config.toml`.
+It pulls in `ffmpeg` as a dependency.
+
+> The distro `ffmpeg` may only ship the slow `libaom-av1` encoder. For much
+> faster encodes install an ffmpeg build with `libsvtav1` — vidwatcher picks the
+> best available automatically (`libsvtav1` → `libaom-av1` → `librav1e`).
+
+Then:
+
+```sh
+sudoedit /etc/vidwatcher/config.toml     # set `watch = [...]`
+sudo systemctl start vidwatcher
+journalctl -u vidwatcher -f              # watch it work
+```
+
+By default the service runs as the unprivileged `vidwatcher` user, which must be
+able to read (and write, unless `output.mode = "directory"`) your media folders.
+To run it as yourself instead:
+
+```sh
+sudo systemctl edit vidwatcher
+# [Service]
+# User=me
+# Group=me
+```
+
+### Building the package
+
+```sh
+packaging/build-deb.sh        # needs cargo, dpkg-deb, fakeroot
+```
+
+## Configuration
+
+Config is TOML, loaded from the first of:
+
+1. `--config <FILE>`
+2. `$VIDWATCHER_CONFIG`
+3. `~/.config/vidwatcher/config.toml`
+4. `/etc/vidwatcher/config.toml`
+
+See [`packaging/config.toml`](packaging/config.toml) for the fully commented
+default. Key settings:
+
+| Key | Meaning | Default |
+|-----|---------|---------|
+| `watch` | list of directories to scan | `[]` |
+| `recursive` | descend into sub-directories | `true` |
+| `scan-interval` | time between passes (`"15m"`, `"2h"`, …) | `15m` |
+| `min-file-age` | ignore files touched more recently than this | `60s` |
+| `max-attempts` | give up on a file after N failures | `3` |
+| `state-file` | processed-file database | `/var/lib/vidwatcher/state.json` |
+| `encode.crf` | quality 0–63, lower = better/bigger | `32` |
+| `encode.preset` | speed knob (SVT `-preset` / aom `-cpu-used` / rav1e `-speed`) | `6` |
+| `encode.audio-bitrate` | Opus kbit/s per track | `128` |
+| `encode.bit-depth` | `8` (max HW compat) or `10` (smaller) | `10` |
+| `output.mode` | `beside` or `directory` (mirror tree) | `beside` |
+| `output.directory` | target root for `mode = "directory"` | — |
+| `output.suffix` | text before `.webm` in output names | `""` |
+| `output.replace` | delete source after success | `false` |
+| `output.skip-av1` | skip files already in AV1 | `true` |
+| `output.preserve-timestamps` | copy source mtime/atime onto the output | `true` |
+| `log.level` | `error`…`trace` | `info` |
+| `log.file` | also append logs here | — |
+
+Apply changes with `systemctl restart vidwatcher`.
+
+## Running by hand
 
 ```
-vidwatcher ~/Videos --crf 30 --skip-av1
+vidwatcher [--config FILE] [--once] [--check-config] [--log-level LEVEL]
+
+--once            do a single scan pass and exit (good for cron)
+--check-config    print the resolved configuration and exit
 ```
 
 ## Notes
 
-- Outputs are written next to each source as `name.webm` (or `name.av1.webm` when
-  the source is itself `name.webm`). Use `--output-dir` or `--skip-av1` to avoid
-  re-processing outputs on a second run.
-- `libaom-av1` is slow; raise `--preset` (e.g. `8`) for faster encodes.
+- Outputs are written as `name.webm` (or `name.av1.webm` when the source is
+  itself `name.webm`). With `output.mode = "directory"` the watched tree is
+  mirrored under `output.directory`, leaving sources untouched.
+- CRF picks the quality; preset picks how hard the encoder works for that
+  quality. Lower preset = smaller file, slower. Try `preset = 8` on big batches
+  with `libaom-av1`.
+- 10-bit AV1 is actually *smaller* than 8-bit at equal quality; use `bit-depth =
+  8` only if a target device can't hardware-decode 10-bit.
+- With `preserve-timestamps` the output keeps the source's *modified* and
+  *accessed* times. A file's *creation* (birth) time cannot be set on Linux — no
+  syscall exists — so on the new file it will be the conversion time. The inode
+  *change* time (`ctime`) likewise always reflects the last metadata change.

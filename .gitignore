@@ -1,2 +1,4 @@
 /target
+/vidwatcher_*.deb
+*.tmp
 examples/

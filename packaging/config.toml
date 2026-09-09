@@ -1,0 +1,62 @@
+# vidwatcher configuration
+# Reinstall-safe: this file is a dpkg conffile, your edits are preserved on upgrade.
+# Apply changes with:  systemctl restart vidwatcher
+
+# Directories to watch. The daemon rescans these on every pass.
+# Nothing happens until you list at least one.
+watch = [
+    # "/srv/media/incoming",
+    # "/home/me/Videos",
+]
+
+# Recurse into sub-directories.
+recursive = true
+
+# Time between scans. Accepts "30s", "15m", "2h", "1h30m", ...
+scan-interval = "15m"
+
+# Ignore files touched more recently than this (avoids picking up partial
+# downloads / copies still in progress).
+min-file-age = "60s"
+
+# Stop retrying a file after this many failed conversions.
+max-attempts = 3
+
+# Database of already-processed files. Must be writable by the service user.
+state-file = "/var/lib/vidwatcher/state.json"
+
+[encode]
+# Constant quality, 0-63. Lower = better quality and bigger files. 28-36 is the useful range.
+crf = 32
+# Encoder speed knob: libsvtav1 -preset (0-13), libaom -cpu-used (0-8), rav1e -speed.
+# Higher = faster encode, slightly larger files.
+preset = 6
+# Opus bitrate per audio track, kbit/s. 96-128 is transparent for most content.
+audio-bitrate = 128
+# 10 = smaller files at equal quality; 8 = widest hardware-decoder compatibility.
+bit-depth = 10
+
+[output]
+# "beside"    -> write "<name>.webm" next to each source file
+# "directory" -> mirror the watched tree under `directory` below
+mode = "beside"
+# directory = "/srv/media/converted"
+
+# Inserted into the output filename before ".webm".
+suffix = ""
+
+# Delete each source file after it has been converted successfully.
+replace = false
+
+# Skip files whose video track is already AV1.
+skip-av1 = true
+
+# Copy the source file's modification/access times onto the converted file.
+# (Linux cannot set a file's creation/birth time, so that stays as "now".)
+preserve-timestamps = true
+
+[log]
+# error | warn | info | debug | trace
+level = "info"
+# Optionally also append logs to a file (stderr always goes to the journal).
+# file = "/var/log/vidwatcher.log"

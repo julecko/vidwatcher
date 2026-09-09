@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload || true
+fi
+
+case "$1" in
+    purge)
+        rm -rf /var/lib/vidwatcher
+        rm -f /var/log/vidwatcher.log
+        if getent passwd vidwatcher >/dev/null; then
+            deluser --system vidwatcher || true
+        fi
+        if getent group vidwatcher >/dev/null; then
+            delgroup --system vidwatcher || true
+        fi
+        rmdir /etc/vidwatcher 2>/dev/null || true
+        ;;
+esac
+
+exit 0
